@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空间声学分析 | Space Acoustic Analyzer</title>
+    <!-- ECharts 图表库 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <!-- Three.js 3D 引擎 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        :root {
+            --bg-color: #0a0a0c; 
+            --panel-bg: #111115;
+            --text-main: #f0f0f0; 
+            --text-muted: #888;
+            --accent-gold: #d4af37; 
+            
+            /* 图表颜色 */
+            --chart-blue: rgb(89, 77, 203);
+            --chart-red: rgb(197, 104, 66);
+            
+            /* 诊断报告颜色 */
+            --report-blue: rgb(102, 82, 248);
+            --report-red: rgb(232, 112, 61);
+            
+            --border-color: #333;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-main); font-family: -apple-system, sans-serif; margin: 0; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 900px; }
+
+        /* 顶部大标题 */
+        .main-header { text-align: center; margin-bottom: 40px; }
+        .main-header h1 { font-size: 32px; margin: 0 0 10px 0; letter-spacing: 2px; }
+        .main-header p { font-size: 16px; color: var(--accent-gold); margin: 0; letter-spacing: 4px; font-weight: 300; }
+
+        .section-title { border-left: 3px solid var(--accent-gold); padding-left: 10px; margin: 40px 0 15px 0; display: flex; justify-content: space-between; align-items: flex-end;}
+        .section-title h2 { margin: 0; font-size: 18px; letter-spacing: 1px; display: flex; flex-direction: column;}
+        .section-title h2 span { font-size: 12px; color: var(--text-muted); font-weight: normal; margin-top: 4px; letter-spacing: 1px; }
+
+        /* 3D 视图容器 */
+        #sim-container { width: 100%; height: 350px; background: #050508; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 30px; overflow: hidden; position: relative;}
+        .sim-overlay { position: absolute; top: 10px; left: 10px; color: rgba(255,255,255,0.6); font-size: 12px; pointer-events: none; line-height: 1.8;}
+
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px; }
+        .grid-1 { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 20px; }
+
+        .input-group label { display: flex; flex-direction: column; font-size: 14px; margin-bottom: 8px; }
+        .input-group label span.en { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+        .input-group label .unit { color: var(--accent-gold); font-size: 12px; position: absolute; right: 0; top: 0;}
+        .input-group label div { position: relative; }
+        input { background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--accent-gold); font-size: 18px; font-weight: bold; padding: 12px 15px; border-radius: 4px; outline: none; width: 100%; box-sizing: border-box;}
+        
+        /* 计算按钮增加圆角 (border-radius: 12px) */
+        .btn-calc { width: 100%; background: rgba(212, 175, 55, 0.05); border: 1px solid var(--accent-gold); color: var(--text-main); padding: 20px; font-size: 18px; font-weight: bold; letter-spacing: 2px; cursor: pointer; border-radius: 12px; margin-top: 20px; transition: 0.3s; }
+        .btn-calc span { display: block; font-size: 12px; color: var(--accent-gold); margin-top: 5px; font-weight: normal; letter-spacing: 1px;}
+        .btn-calc:hover { background: rgba(212, 175, 55, 0.15); }
+
+        .btn-export { background: transparent; border: 1px solid #555; color: #ccc; padding: 8px 15px; font-size: 12px; cursor: pointer; border-radius: 4px; transition: 0.3s; }
+        .btn-export:hover { border-color: var(--text-main); color: #fff; }
+
+        #chart-container { width: 100%; height: 400px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; margin-top: 20px; padding: 20px; box-sizing: border-box; }
+
+        /* 动态生成的报告网格 */
+        .reports-grid { display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 20px; }
+        .report-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; }
+        .report-card.blue { border-left: 4px solid var(--report-blue); }
+        .report-card.red { border-left: 4px solid var(--report-red); }
+        .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #333; padding-bottom: 15px; margin-bottom: 15px;}
+        .report-freq { font-size: 28px; font-weight: bold; }
+        .report-card.blue .report-freq { color: var(--report-blue); }
+        .report-card.red .report-freq { color: var(--report-red); }
+        .tag { border: 1px solid; padding: 4px 10px; font-size: 12px; border-radius: 4px; font-weight: bold;}
+        .report-desc { font-size: 14px; line-height: 1.6; color: #ccc; }
+        .eq-advice { background: rgba(255,255,255,0.03); padding: 10px 15px; margin: 15px 0; border-radius: 4px; font-size: 14px; display: flex; justify-content: space-between; }
+        .renovation-box { border: 1px dashed #555; padding: 15px; border-radius: 4px; font-size: 13px; color: #aaa; line-height: 1.8; }
+        #results-section { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 顶部大标题 -->
+    <div class="main-header">
+        <h1>空间声学分析</h1>
+        <p>SPACE ACOUSTIC ANALYZER</p>
+    </div>
+
+    <div class="section-title">
+        <h2>3D 空间声学模拟器 <span>3D Room Acoustic Simulator</span></h2>
+    </div>
+    <div id="sim-container">
+        <div class="sim-overlay">
+            🔴 音源 (Speaker Position)<br>
+            🔵 听音位 (Listener Position)<br>
+            <span style="color:#888;">* 拖拽鼠标旋转视角 (Drag to rotate) / 滚轮缩放 (Scroll to zoom)</span>
+        </div>
+    </div>
+
+    <div class="section-title">
+        <h2>环境与物理尺寸 (厘米) <span>Environment & Physical Dimensions (cm)</span></h2>
+    </div>
+    <div class="grid-3">
+        <div class="input-group"><label><div>长度 <span class="unit">L</span></div><span class="en">Length (Front to Back)</span></label><input type="number" id="L" value="450"></div>
+        <div class="input-group"><label><div>宽度 <span class="unit">W</span></div><span class="en">Width (Left to Right)</span></label><input type="number" id="W" value="320"></div>
+        <div class="input-group"><label><div>高度 <span class="unit">H</span></div><span class="en">Height (Floor to Ceiling)</span></label><input type="number" id="H" value="280"></div>
+    </div>
+    <div class="grid-1">
+        <div class="input-group"><label><div>混响时间 <span class="unit">RT60 / SEC</span></div><span class="en">Reverberation Time</span></label><input type="number" id="rt60" value="0.21" step="0.01"></div>
+    </div>
+
+    <div class="section-title">
+        <h2>坐标映射 (厘米) <span>Coordinate Mapping (cm)</span></h2>
+    </div>
+    <div class="grid-3">
+        <div class="input-group"><label><div>听音位 - 距前墙 <span class="unit">Z</span></div><span class="en">Listener from Front Wall</span></label><input type="number" id="lx" value="170"></div>
+        <div class="input-group"><label><div>听音位 - 距左墙 <span class="unit">X</span></div><span class="en">Listener from Left Wall</span></label><input type="number" id="ly" value="160"></div>
+        <div class="input-group"><label><div>听音位 - 耳高 <span class="unit">Y</span></div><span class="en">Listener Ear Height</span></label><input type="number" id="lz" value="110"></div>
+    </div>
+    <div class="grid-3">
+        <div class="input-group"><label><div>音源中心 - 距前墙 <span class="unit">Z</span></div><span class="en">Speaker from Front Wall</span></label><input type="number" id="sx" value="50"></div>
+        <div class="input-group"><label><div>音源中心 - 距左墙 <span class="unit">X</span></div><span class="en">Speaker from Left Wall</span></label><input type="number" id="sy" value="160"></div>
+        <div class="input-group"><label><div>音源中心 - 高度 <span class="unit">Y</span></div><span class="en">Speaker Woofer Height</span></label><input type="number" id="sz" value="120"></div>
+    </div>
+
+    <!-- 更新了文字与按钮圆角的计算按钮 -->
+    <button class="btn-calc" onclick="calculate()">
+        启动声学分析
+        <span>INITIALIZE SPACE ACOUSTIC ANALYSIS</span>
+    </button>
+
+    <div id="results-section">
+        <!-- 移除了加权聚合字样 -->
+        <div class="section-title" style="margin-top: 50px;">
+            <h2>频谱响应分析 <span>Spectral Response Analysis</span></h2>
+        </div>
+        <div id="chart-container"></div>
+
+        <!-- 调整了诊断报告的字样 -->
+        <div class="section-title" style="margin-top: 50px;">
+            <h2>完整诊断报告 <span>Full Diagnostic Report</span></h2>
+            <button class="btn-export" onclick="exportEQ()">⬇ 导出 DSP/REW 修正参数 (.txt)</button>
+        </div>
+        <div id="report-container" class="reports-grid"></div>
+    </div>
+</div>
+
+<script>
+    const SPEED_OF_SOUND = 34300; 
+    let eqExportData = []; 
+
+    const rootStyles = getComputedStyle(document.documentElement);
+    const colorChartBlue = rootStyles.getPropertyValue('--chart-blue').trim();
+    const colorChartRed = rootStyles.getPropertyValue('--chart-red').trim();
+    const colorReportBlue = rootStyles.getPropertyValue('--report-blue').trim();
+    const colorReportRed = rootStyles.getPropertyValue('--report-red').trim();
+
+    // --- 1. Three.js 3D 渲染逻辑 ---
+    let scene, camera, renderer, controls;
+    let roomBox, speakerMesh, listenerMesh;
+    let lblFront, lblBack, lblLeft, lblRight;
+
+    function createTextSprite(message) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        const fontSize = 48;
+        context.font = `Bold ${fontSize}px Arial`;
+        const metrics = context.measureText(message);
+        
+        canvas.width = metrics.width + 20;
+        canvas.height = fontSize + 20;
+        
+        context.font = `Bold ${fontSize}px Arial`;
+        context.fillStyle = "rgba(255, 255, 255, 0.4)"; 
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(message, canvas.width / 2, canvas.height / 2);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        
+        const scaleBase = 0.5;
+        sprite.scale.set(canvas.width * scaleBase, canvas.height * scaleBase, 1);
+        return sprite;
+    }
+
+    function init3D() {
+        const container = document.getElementById('sim-container');
+        scene = new THREE.Scene();
+        
+        camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 2000);
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+
+        const roomMat = new THREE.LineBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.5 });
+        const speakerMat = new THREE.MeshBasicMaterial({ color: colorChartRed });
+        const listenerMat = new THREE.MeshBasicMaterial({ color: colorChartBlue });
+
+        roomBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), roomMat);
+        speakerMesh = new THREE.Mesh(new THREE.BoxGeometry(20, 30, 20), speakerMat);
+        listenerMesh = new THREE.Mesh(new THREE.SphereGeometry(15, 16, 16), listenerMat);
+
+        lblFront = createTextSprite("FRONT");
+        lblBack = createTextSprite("BACK");
+        lblLeft = createTextSprite("LEFT");
+        lblRight = createTextSprite("RIGHT");
+
+        scene.add(roomBox, speakerMesh, listenerMesh);
+        scene.add(lblFront, lblBack, lblLeft, lblRight);
+
+        const gridHelper = new THREE.GridHelper(1000, 20, 0x333333, 0x111111);
+        gridHelper.position.y = -0.1; 
+        scene.add(gridHelper);
+
+        update3DScene();
+        animate3D();
+    }
+
+    function update3DScene() {
+        const L = parseFloat(document.getElementById('L').value) || 450;
+        const W = parseFloat(document.getElementById('W').value) || 320;
+        const H = parseFloat(document.getElementById('H').value) || 280;
+        
+        roomBox.geometry.dispose();
+        roomBox.geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(W, H, L));
+        roomBox.position.set(0, H/2, 0);
+
+        lblFront.position.set(0, H/2, -L/2);
+        lblBack.position.set(0, H/2, L/2);
+        lblLeft.position.set(-W/2, H/2, 0);
+        lblRight.position.set(W/2, H/2, 0);
+
+        const mapCoord = (x_left, y_up, z_front) => {
+            return { x: x_left - W/2, y: y_up, z: z_front - L/2 };
+        };
+
+        const lx = parseFloat(document.getElementById('lx').value) || 170;
+        const ly = parseFloat(document.getElementById('ly').value) || 160;
+        const lz = parseFloat(document.getElementById('lz').value) || 110;
+        const lPos = mapCoord(ly, lz, lx);
+        listenerMesh.position.set(lPos.x, lPos.y, lPos.z);
+
+        const sx = parseFloat(document.getElementById('sx').value) || 50;
+        const sy = parseFloat(document.getElementById('sy').value) || 160;
+        const sz = parseFloat(document.getElementById('sz').value) || 120;
+        const sPos = mapCoord(sy, sz, sx);
+        speakerMesh.position.set(sPos.x, sPos.y, sPos.z);
+
+        camera.position.set(W, H * 1.5, L * 1.5);
+        controls.target.set(0, H/2, 0);
+        controls.update();
+    }
+
+    function animate3D() {
+        requestAnimationFrame(animate3D);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    document.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', update3DScene);
+    });
+
+    window.addEventListener('resize', () => {
+        const container = document.getElementById('sim-container');
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // --- 2. 核心声学算法 ---
+    function calculate() {
+        const rt60 = parseFloat(document.getElementById('rt60').value);
+        const L = parseFloat(document.getElementById('L').value); const W = parseFloat(document.getElementById('W').value); const H = parseFloat(document.getElementById('H').value);
+        const lx = parseFloat(document.getElementById('lx').value); const ly = parseFloat(document.getElementById('ly').value); const lz = parseFloat(document.getElementById('lz').value);
+        const sx = parseFloat(document.getElementById('sx').value); const sy = parseFloat(document.getElementById('sy').value); const sz = parseFloat(document.getElementById('sz').value);
+
+        const schroederFreq = Math.round(2000 * Math.sqrt(rt60 / ((L/100) * (W/100) * (H/100))));
+        
+        let modes = [];
+        eqExportData = []; 
+        const maxHarmonic = 4; 
+
+        for (let p = 0; p <= maxHarmonic; p++) {
+            for (let q = 0; q <= maxHarmonic; q++) {
+                for (let r = 0; r <= maxHarmonic; r++) {
+                    if (p === 0 && q === 0 && r === 0) continue; 
+
+                    const freq = (SPEED_OF_SOUND / 2) * Math.sqrt(Math.pow(p/L, 2) + Math.pow(q/W, 2) + Math.pow(r/H, 2));
+                    if (freq > 250) continue; 
+
+                    let zeroCount = (p===0?1:0) + (q===0?1:0) + (r===0?1:0);
+                    let type, weight, axisDesc;
+                    if (zeroCount === 2) { type = '轴向 (Axial)'; weight = 1.0; axisDesc = p>0?'前后墙 (Front/Back)':'左右墙 (Left/Right) / 天地 (Ceiling/Floor)';}
+                    else if (zeroCount === 1) { type = '切向 (Tangential)'; weight = 0.5; axisDesc = '四面墙复合 (Four-Wall Compound)';}
+                    else { type = '斜向 (Oblique)'; weight = 0.25; axisDesc = '全空间六面墙 (All Six Surfaces)';}
+
+                    const p_speaker = Math.cos(p * Math.PI * sx / L) * Math.cos(q * Math.PI * sy / W) * Math.cos(r * Math.PI * sz / H);
+                    const p_listener = Math.cos(p * Math.PI * lx / L) * Math.cos(q * Math.PI * ly / W) * Math.cos(r * Math.PI * lz / H);
+                    const coupling = weight * p_speaker * p_listener;
+
+                    modes.push({
+                        freq: freq.toFixed(1),
+                        coupling: parseFloat(coupling.toFixed(3)),
+                        type: type, axis: axisDesc, p: p, q: q, r: r
+                    });
+                }
+            }
+        }
+
+        modes.sort((a, b) => a.freq - b.freq);
+        document.getElementById('results-section').style.display = 'block';
+        
+        renderChart(modes, schroederFreq);
+        renderReports(modes);
+        
+        document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // --- 3. ECharts 频谱绘制 ---
+    function renderChart(modes, schroederFreq) {
+        const chartDom = document.getElementById('chart-container');
+        const myChart = echarts.init(chartDom);
+
+        const seriesData = modes.map(m => {
+            return {
+                value: [m.freq, m.coupling],
+                itemStyle: { color: m.coupling > 0 ? colorChartRed : colorChartBlue },
+                detail: m
+            };
+        });
+
+        const option = {
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'item',
+                formatter: function (params) {
+                    let d = params.data.detail;
+                    return `<div style="color:#000;">
+                            <strong>${d.freq} Hz</strong> [${d.p},${d.q},${d.r}]<br/>
+                            状态 (State): ${d.coupling > 0 ? '峰值 (Peak)' : '谷值 (Null)'}<br/>
+                            类型 (Type): ${d.type}<br/>
+                            强度 (Coupling): ${d.coupling}
+                        </div>`;
+                }
+            },
+            grid: { left: '3%', right: '5%', bottom: '10%', top: '10%', containLabel: true },
+            xAxis: { 
+                type: 'value', min: 20, max: 250, 
+                axisLabel: { color: '#888' }, splitLine: { show: false }
+            },
+            yAxis: { 
+                type: 'value', min: -1.2, max: 1.2,
+                splitLine: { lineStyle: { color: '#222', type: 'dashed' } },
+                axisLabel: { show: false }
+            },
+            series: [{
+                type: 'bar', barWidth: '3px', data: seriesData,
+                markLine: {
+                    symbol: ['none', 'none'],
+                    label: { formatter: '施罗德频率\n(Schroeder Freq)', position: 'end', color: '#d4af37', fontSize: 10 },
+                    lineStyle: { color: '#d4af37', type: 'dashed', width: 2 },
+                    data: [{ xAxis: schroederFreq }]
+                }
+            }]
+        };
+        myChart.setOption(option);
+        window.addEventListener('resize', () => myChart.resize());
+    }
+
+    // --- 4. 生成诊断报告 & 组装 EQ 数据 ---
+    function renderReports(modes) {
+        const container = document.getElementById('report-container');
+        container.innerHTML = '';
+
+        const significantIssues = modes.filter(m => Math.abs(m.coupling) > 0.3)
+                                       .sort((a, b) => Math.abs(b.coupling) - Math.abs(a.coupling));
+
+        if (significantIssues.length === 0) {
+            container.innerHTML = '<div style="color:#888;">当前位置声学环境较好，未发现严重模态问题 (No significant modal issues found in this location)。</div>';
+            return;
+        }
+
+        let eqFilterCount = 1;
+
+        significantIssues.forEach((issue) => {
+            const isPeak = issue.coupling > 0;
+            const severityDb = (Math.abs(issue.coupling) * 12).toFixed(1);
+
+            if (isPeak) {
+                const cutDb = (issue.coupling * 15).toFixed(1);
+                const qValue = issue.type.includes('轴向') ? '5.0' : '3.0';
+                
+                eqExportData.push(`Filter ${eqFilterCount++}: ON PK Fc ${issue.freq} Hz Gain -${cutDb} dB Q ${parseFloat(qValue)}`);
+
+                container.innerHTML += `
+                    <div class="report-card red">
+                        <div class="report-header">
+                            <div class="report-freq">${issue.freq} Hz</div>
+                            <div class="tag" style="border-color:var(--report-red); color:var(--report-red)">驻波峰值 / RESONANCE PEAK [${issue.p},${issue.q},${issue.r}]</div>
+                        </div>
+                        <div class="report-desc">
+                            诊断 (Diagnosis): 位于波腹 (Antinode)。类型: <strong>${issue.type}</strong>。由 ${issue.axis} 激发。<br>
+                            听感影响 (Acoustic Impact): 造成约 +${severityDb}dB 的能量淤积 (Energy Buildup)，低频轰头 (Boominess)、掩蔽中频。
+                        </div>
+                        <div class="eq-advice">
+                            <span>DSP/EQ 修正参数建议 (Recommended EQ):</span>
+                            <span style="color:var(--report-red); font-weight:bold;">衰减 (Gain): -${cutDb} dB | Q值 (Q-Factor): ${qValue}</span>
+                        </div>
+                        <div class="renovation-box">
+                            💡 <strong>声学处理建议 (Acoustic Treatment Suggestion)</strong><br>
+                            ${issue.type.includes('轴向') ? '此为强劲的轴向驻波 (Strong Axial Mode)。建议在对应墙面（特别是墙角）设置厚度大于20cm的宽频低频陷阱 (Broadband Bass Traps)。' : '复合反射模态 (Compound Mode)。优先通过微调音箱位置 (Speaker Placement) 避开发声波腹，或在第一反射区 (First Reflection Points) 增加吸声体。'}
+                        </div>
+                    </div>`;
+            } else {
+                container.innerHTML += `
+                    <div class="report-card blue">
+                        <div class="report-header">
+                            <div class="report-freq">${issue.freq} Hz</div>
+                            <div class="tag" style="border-color:var(--report-blue); color:var(--report-blue)">相位抵消 / PHASE NULL [${issue.p},${issue.q},${issue.r}]</div>
+                        </div>
+                        <div class="report-desc">
+                            诊断 (Diagnosis): 位于波节死点 (Node)。类型: <strong>${issue.type}</strong>。由 ${issue.axis} 引起。<br>
+                            听感影响 (Acoustic Impact): 造成严重的声音下陷 (Frequency Dip 约 -${severityDb}dB)，贝斯和底鼓缺失力度 (Lack of Punch)。
+                        </div>
+                        <div class="eq-advice">
+                            <span>DSP/EQ 修正参数建议 (Recommended EQ):</span>
+                            <span style="color:var(--report-blue); font-weight:bold;">禁止提升 (Do Not Boost) - 物理抵消无法用EQ弥补 (Cannot fix nulls with EQ)</span>
+                        </div>
+                        <div class="renovation-box">
+                            💡 <strong>声学处理建议 (Acoustic Treatment Suggestion)</strong><br>
+                            相位抵消陷阱极难处理。最佳方案是<strong>移动听音沙发位置 (Move Listener Position)</strong>，或移动音源位置打破几何对称 (Break Symmetry)。增加对应墙面的强吸音 (Heavy Absorption) 可能缓解抵消深度。
+                        </div>
+                    </div>`;
+            }
+        });
+    }
+
+    // --- 5. 导出 EQ 文本 ---
+    function exportEQ() {
+        if (eqExportData.length === 0) {
+            alert("目前没有需要衰减的驻波峰值数据。\n(No peak data available for export.)");
+            return;
+        }
+
+        let fileContent = "Room Acoustics Model - EQ Parameter Export\n";
+        fileContent += "Compatible with REW / DSP Processors\n";
+        fileContent += "========================================\n\n";
+        fileContent += eqExportData.join("\n");
+        fileContent += "\n\n* Note: Phase nulls (dips) are excluded from this export as boosting them causes headroom issues and distortion.";
+
+        const blob = new Blob([fileContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Room_EQ_Export.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    window.onload = init3D;
+</script>
+</body>
+</html>
